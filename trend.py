@@ -4,10 +4,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
-# Set up Streamlit app title
-st.title('Top 100 Stock Trend Analysis with 200-Day SMA')
+# 设置Streamlit应用标题
+st.title('Top 100股票趋势分析(200日移动平均线)')
 
-# Stock ticker selection
+# 股票代码选择
 tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'FB', 'TSLA', 'BRK-B', 'NVDA', 'JPM', 'JNJ',
     'V', 'PG', 'UNH', 'HD', 'MA', 'DIS', 'PYPL', 'NFLX', 'CMCSA', 'PEP',
     'VZ', 'T', 'MRK', 'INTC', 'CSCO', 'ABT', 'NKE', 'PFE', 'XOM', 'TMO',
@@ -17,116 +17,134 @@ tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'FB', 'TSLA', 'BRK-B', 'NVDA', 'JPM'
     'DHR', 'MMC', 'LRCX', 'SPGI', 'C', 'BA', 'ADP', 'CME', 'BIIB', 'MS',
     'ZTS', 'GS', 'NTRS', 'LHX', 'MET', 'SRE', 'KMB', 'ADSK', 'NTES', 'CDW',
     'CB', 'PXD', 'LNT', 'DOW', 'CARR', 'MPC', 'ETR', 'HIG', 'VRTX', 'NDAQ',
-    'NKE', 'FIS', 'DTE', 'TSN', 'OXY', 'MDLZ', 'PSA', 'CDK', 'MAR', 'FANG'
-'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'META', 'TSLA', 'NFLX', 'NVDA', 'INTC', 'CSCO']
-selected_ticker = st.selectbox('Select a stock ticker:', tickers)
+    'NKE', 'FIS', 'DTE', 'TSN', 'OXY', 'MDLZ', 'PSA', 'CDK', 'MAR', 'FANG',
+    'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'META', 'TSLA', 'NFLX', 'NVDA', 'INTC', 'CSCO']
+selected_ticker = st.selectbox('选择股票代码:', tickers)
 
-# Fetch historical stock data
-start_date = '2019-01-01'  # Set your start date
-end_date = (datetime.now() - timedelta(days=1)).date()  # Set end date to yesterday
+# 获取历史股票数据 - 延长数据获取时间范围
+start_date = '2010-01-01'  # 改为更早的日期以确保足够数据
+end_date = datetime.now().date()  # 包含今天的数据
 
-# Download the data
+# 下载数据
 data = yf.download(selected_ticker, start=start_date, end=end_date)
 
-# Calculate the 200-day SMA
-data['SMA_200'] = data['Close'].rolling(window=200).mean()
+# 检查数据是否足够
+if len(data) < 200:
+    st.error(f"错误: 数据不足(只有{len(data)}个交易日)，无法计算200日移动平均线")
+    st.stop()
 
-# Determine trends and their periods
+# 计算200日移动平均线
+data['SMA_200'] = data['Close'].rolling(window=200, min_periods=1).mean()
+
+# 确定趋势及其周期
 sma_trend = []
 current_trend = None
-uptrend_periods = []
-downtrend_periods = []
+uptrend_periods = []  # 上升趋势周期
+downtrend_periods = []  # 下降趋势周期
 
-# Identify trends and their start and end dates
+# 识别趋势及其起止日期 - 添加调试信息
 for i in range(1, len(data['SMA_200'])):
+    if pd.isna(data['SMA_200'].iloc[i]) or pd.isna(data['SMA_200'].iloc[i-1]):
+        continue  # 跳过NaN值
+    
     if data['SMA_200'].iloc[i] > data['SMA_200'].iloc[i - 1]:
         if current_trend != 'uptrend':
-            if current_trend == 'downtrend':
-                downtrend_periods[-1][1] = data.index[i - 1]  # Update end date of the last downtrend period
-            uptrend_periods.append([data.index[i - 1], None])  # Start new uptrend period
+            if current_trend == 'downtrend' and downtrend_periods:
+                downtrend_periods[-1][1] = data.index[i - 1]  # 更新最后一个下降趋势的结束日期
+            uptrend_periods.append([data.index[i - 1], None])  # 开始新的上升趋势周期
             current_trend = 'uptrend'
     elif data['SMA_200'].iloc[i] < data['SMA_200'].iloc[i - 1]:
         if current_trend != 'downtrend':
-            if current_trend == 'uptrend':
-                uptrend_periods[-1][1] = data.index[i - 1]  # Update end date of the last uptrend period
-            downtrend_periods.append([data.index[i - 1], None])  # Start new downtrend period
+            if current_trend == 'uptrend' and uptrend_periods:
+                uptrend_periods[-1][1] = data.index[i - 1]  # 更新最后一个上升趋势的结束日期
+            downtrend_periods.append([data.index[i - 1], None])  # 开始新的下降趋势周期
             current_trend = 'downtrend'
 
-# Finalize the last period
-if current_trend == 'uptrend':
-    uptrend_periods[-1][1] = data.index[-1]  # End the last uptrend period
-elif current_trend == 'downtrend':
-    downtrend_periods[-1][1] = data.index[-1]  # End the last downtrend period
+# 完成最后一个周期
+if current_trend == 'uptrend' and uptrend_periods:
+    uptrend_periods[-1][1] = data.index[-1]  # 结束最后一个上升趋势周期
+elif current_trend == 'downtrend' and downtrend_periods:
+    downtrend_periods[-1][1] = data.index[-1]  # 结束最后一个下降趋势周期
 
-# Filter periods to only include those longer than 50 days
+# 调试信息
+st.write(f"原始上升趋势周期数: {len(uptrend_periods)}")
+st.write(f"原始下降趋势周期数: {len(downtrend_periods)}")
+
+# 调整筛选条件 - 降低持续时间要求
+min_duration_days = 20  # 从50天改为20天
+
 filtered_uptrend_periods = []
 for start, end in uptrend_periods:
-    if (end - start).days > 50:  # Only keep periods longer than 50 days
-        filtered_uptrend_periods.append([start, end])
+    if end is not None and start is not None:
+        duration = (end - start).days
+        if duration > min_duration_days:  # 使用调整后的条件
+            filtered_uptrend_periods.append([start, end])
 
 filtered_downtrend_periods = []
 for start, end in downtrend_periods:
-    if (end - start).days > 50:  # Only keep periods longer than 50 days
-        filtered_downtrend_periods.append([start, end])
+    if end is not None and start is not None:
+        duration = (end - start).days
+        if duration > min_duration_days:  # 使用调整后的条件
+            filtered_downtrend_periods.append([start, end])
 
-# Merge consecutive periods with the same trend, ensuring at least a 50-day gap
+# 合并相同趋势的连续周期(间隔小于50天)
 merged_uptrend_periods = []
 if filtered_uptrend_periods:
     start, end = filtered_uptrend_periods[0]
     for i in range(1, len(filtered_uptrend_periods)):
         next_start, _ = filtered_uptrend_periods[i]
-        if next_start <= end + pd.Timedelta(days=50):  # Check if the next start is within 50 days of the current end
-            end = filtered_uptrend_periods[i][1]  # Extend the end date
+        if next_start <= end + pd.Timedelta(days=50):  # 检查下一个开始是否在当前结束的50天内
+            end = filtered_uptrend_periods[i][1]  # 延长结束日期
         else:
-            merged_uptrend_periods.append([start, end])  # Store the merged period
-            start, end = filtered_uptrend_periods[i]  # Start new period
-    merged_uptrend_periods.append([start, end])  # Append the last period
+            merged_uptrend_periods.append([start, end])  # 存储合并后的周期
+            start, end = filtered_uptrend_periods[i]  # 开始新周期
+    merged_uptrend_periods.append([start, end])  # 添加最后一个周期
 
-# Repeat merging for downtrend periods
+# 对下降趋势周期重复合并操作
 merged_downtrend_periods = []
 if filtered_downtrend_periods:
     start, end = filtered_downtrend_periods[0]
     for i in range(1, len(filtered_downtrend_periods)):
         next_start, _ = filtered_downtrend_periods[i]
-        if next_start <= end + pd.Timedelta(days=50):  # Check if the next start is within 50 days of the current end
-            end = filtered_downtrend_periods[i][1]  # Extend the end date
+        if next_start <= end + pd.Timedelta(days=50):  # 检查下一个开始是否在当前结束的50天内
+            end = filtered_downtrend_periods[i][1]  # 延长结束日期
         else:
-            merged_downtrend_periods.append([start, end])  # Store the merged period
-            start, end = filtered_downtrend_periods[i]  # Start new period
-    merged_downtrend_periods.append([start, end])  # Append the last period
+            merged_downtrend_periods.append([start, end])  # 存储合并后的周期
+            start, end = filtered_downtrend_periods[i]  # 开始新周期
+    merged_downtrend_periods.append([start, end])  # 添加最后一个周期
 
-# Display results in Streamlit
-st.write(f"Number of uptrend periods: {len(merged_uptrend_periods)}")
+# 在Streamlit中显示结果
+st.write(f"上升趋势周期数量: {len(merged_uptrend_periods)}")
 for start, end in merged_uptrend_periods:
     duration = (end - start).days
-    st.write(f"**Uptrend Period:** Start: {start.strftime('%Y-%m-%d')}, End: {end.strftime('%Y-%m-%d')}, Duration: {duration} days")
+    st.write(f"**上升趋势周期:** 开始: {start.strftime('%Y-%m-%d')}, 结束: {end.strftime('%Y-%m-%d')}, 持续时间: {duration} 天")
 
-st.write(f"\nNumber of downtrend periods: {len(merged_downtrend_periods)}")
+st.write(f"\n下降趋势周期数量: {len(merged_downtrend_periods)}")
 for start, end in merged_downtrend_periods:
     duration = (end - start).days
-    st.write(f"**Downtrend Period:** Start: {start.strftime('%Y-%m-%d')}, End: {end.strftime('%Y-%m-%d')}, Duration: {duration} days")
+    st.write(f"**下降趋势周期:** 开始: {start.strftime('%Y-%m-%d')}, 结束: {end.strftime('%Y-%m-%d')}, 持续时间: {duration} 天")
 
-# Create a Plotly figure
+# 创建Plotly图表
 fig = go.Figure()
 
-# Add the closing price trace
+# 添加收盘价轨迹
 fig.add_trace(go.Scatter(
     x=data.index,
     y=data['Close'],
     mode='lines',
-    name=f'{selected_ticker} Closing Price',
+    name=f'{selected_ticker} 收盘价',
     line=dict(color='blue')
 ))
 
-# Color the SMA segments based on trend periods
+# 根据趋势周期为SMA线段着色
 for start, end in merged_uptrend_periods:
     mask = (data.index >= start) & (data.index <= end)
     fig.add_trace(go.Scatter(
         x=data.index[mask],
         y=data['SMA_200'][mask],
         mode='lines',
-        name='200-Day SMA (Uptrend)',
-        line=dict(color='green')
+        name='200日移动平均线(上升趋势)',
+        line=dict(color='green', width=2)
     ))
 
 for start, end in merged_downtrend_periods:
@@ -135,34 +153,23 @@ for start, end in merged_downtrend_periods:
         x=data.index[mask],
         y=data['SMA_200'][mask],
         mode='lines',
-        name='200-Day SMA (Downtrend)',
-        line=dict(color='red')
+        name='200日移动平均线(下降趋势)',
+        line=dict(color='red', width=2)
     ))
 
-# Add gaps between uptrend and downtrend periods in yellow
-all_periods = merged_uptrend_periods + merged_downtrend_periods
-all_periods.sort(key=lambda x: x[0])  # Sort by start date
-
-for i in range(len(all_periods) - 1):
-    current_end = all_periods[i][1]
-    next_start = all_periods[i + 1][0]
-    if (next_start - current_end).days > 0:  # Check if there's a gap
-        fig.add_trace(go.Scatter(
-            x=[current_end, next_start],
-            y=[data['SMA_200'].loc[current_end], data['SMA_200'].loc[current_end]],  # Get SMA value at current_end
-            mode='lines',
-            line=dict(color='yellow', width=4),
-            name='Gap (Yellow)'
-        ))
-
-# Update the layout
+# 更新图表布局
 fig.update_layout(
-    title=f'{selected_ticker} Closing Price and 200-Day SMA',
-    xaxis_title='Date',
-    yaxis_title='Price (USD)',
-    legend=dict(x=-0.1, y=1, traceorder='normal', orientation='v'),  # Adjust legend position
-    template='plotly'
+    title=f'{selected_ticker} 收盘价与200日移动平均线',
+    xaxis_title='日期',
+    yaxis_title='价格(美元)',
+    legend=dict(x=-0.1, y=1, traceorder='normal', orientation='v'),
+    template='plotly',
+    hovermode='x unified'
 )
 
-# Show the figure
+# 显示图表
 st.plotly_chart(fig)
+
+# 显示原始数据用于调试
+with st.expander("显示原始数据(调试用)"):
+    st.write(data.tail())
